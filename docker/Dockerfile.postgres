@@ -1,0 +1,12 @@
+FROM postgres:13
+
+# Installation des extensions utiles pour PostgreSQL
+RUN apt-get update \
+    && apt-get install -y postgresql-contrib \
+    && rm -rf /var/lib/apt/lists/*
+
+# Configuration pour permettre les connexions distantes
+RUN echo "host all all all md5" >> /usr/share/postgresql/13/pg_hba.conf.sample
+
+# Configuration pour écouter sur toutes les interfaces
+CMD ["postgres", "-c", "listen_addresses=*"]

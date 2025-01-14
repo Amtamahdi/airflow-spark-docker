@@ -1,0 +1,66 @@
+FROM openjdk:11-jre-slim
+
+# Set environment variables
+ENV SPARK_VERSION=3.5.4
+ENV HADOOP_VERSION=3
+ENV SPARK_HOME=/opt/spark
+ENV HADOOP_HOME=/opt/hadoop
+ENV PYTHONPATH=${SPARK_HOME}/python:${SPARK_HOME}/python/lib/py4j-0.10.9.7-src.zip
+ENV PATH=${SPARK_HOME}/bin:${PATH}
+ENV LD_LIBRARY_PATH=${HADOOP_HOME}/lib/native:${LD_LIBRARY_PATH}
+
+# Install Python 3.11 and other dependencies
+RUN apt-get update && \
+    apt-get install -y \
+        build-essential \
+        zlib1g-dev \
+        libncurses5-dev \
+        libgdbm-dev \
+        libnss3-dev \
+        libssl-dev \
+        libreadline-dev \
+        libffi-dev \
+        curl \
+        wget \
+        libbz2-dev \
+        liblzma-dev \
+        libsnappy-dev \
+        libsasl2-dev \
+        libsnappy1v5 \
+        && rm -rf /var/lib/apt/lists/*
+
+# Install Python 3.11
+RUN curl -O https://www.python.org/ftp/python/3.11.7/Python-3.11.7.tgz && \
+    tar -xf Python-3.11.7.tgz && \
+    cd Python-3.11.7 && \
+    ./configure --enable-optimizations && \
+    make -j $(nproc) && \
+    make install && \
+    cd .. && \
+    rm -rf Python-3.11.7 Python-3.11.7.tgz && \
+    ln -sf /usr/local/bin/python3.11 /usr/bin/python3 && \
+    ln -sf /usr/local/bin/python3.11 /usr/bin/python
+
+# Install pip and Python packages
+RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11 && \
+    python3.11 -m pip install --no-cache-dir pyspark==${SPARK_VERSION}
+
+# Download and setup Spark
+RUN mkdir -p ${SPARK_HOME} && \
+    curl -L "https://dlcdn.apache.org/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}.tgz" | \
+    tar xz -C ${SPARK_HOME} --strip-components=1
+
+# Configure Spark to use native libraries
+ENV SPARK_CONF_DIR=${SPARK_HOME}/conf
+RUN echo "spark.driver.extraLibraryPath /usr/lib/x86_64-linux-gnu" >> ${SPARK_CONF_DIR}/spark-defaults.conf && \
+    echo "spark.executor.extraLibraryPath /usr/lib/x86_64-linux-gnu" >> ${SPARK_CONF_DIR}/spark-defaults.conf
+
+# Create work directory
+RUN mkdir -p ${SPARK_HOME}/work-dir && \
+    chmod -R 777 ${SPARK_HOME}/work-dir
+
+# Add tini
+RUN apt-get update && apt-get install -y tini && apt-get clean
+ENTRYPOINT ["/usr/bin/tini", "--"]
+
+CMD ["sh", "-c", "sleep 5 && /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master"]
